@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Open Meeting Scribe — Offscreen</title>
+</head>
+<body>
+  <!--
+    This document runs headlessly as an offscreen document.
+    It has access to the full browser Web APIs (including MediaRecorder and
+    getUserMedia) which are not available in the service worker context.
+
+    Responsibilities:
+      1. Receive a tab capture stream ID from the service worker.
+      2. Open the MediaStream using getUserMedia + the stream ID.
+      3. Record audio chunks in memory using MediaRecorder.
+      4. On stop: merge chunks, call Whisper for transcription, call GPT for notes.
+      5. Send structured notes back to the service worker.
+  -->
+  <script type="module" src="offscreen.js"></script>
+</body>
+</html>

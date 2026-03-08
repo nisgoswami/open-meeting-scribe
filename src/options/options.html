@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Open Meeting Scribe — Settings</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <div class="page">
+    <header class="page-header">
+      <div class="logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+        <span>Open Meeting Scribe</span>
+      </div>
+      <p class="page-subtitle">Settings</p>
+    </header>
+
+    <main class="page-content">
+
+      <!-- API Key section -->
+      <section class="settings-section">
+        <h2 class="section-title">OpenAI API Key</h2>
+        <p class="section-desc">
+          Your API key is stored locally in your browser and is never sent to any server other than OpenAI.
+          Get a key at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">platform.openai.com/api-keys</a>.
+        </p>
+
+        <div class="form-group">
+          <label for="api-key" class="form-label">API Key</label>
+          <div class="input-row">
+            <input
+              type="password"
+              id="api-key"
+              class="form-input"
+              placeholder="sk-…"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <button type="button" id="toggle-visibility" class="btn btn-icon" aria-label="Show / hide API key">
+              <svg id="eye-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+          <p id="api-key-status" class="field-status" aria-live="polite"></p>
+        </div>
+
+        <div class="form-actions">
+          <button id="btn-save-key" class="btn btn-primary">Save Key</button>
+          <button id="btn-clear-key" class="btn btn-ghost">Remove Key</button>
+        </div>
+      </section>
+
+      <!-- Model preference section -->
+      <section class="settings-section">
+        <h2 class="section-title">Summary Model</h2>
+        <p class="section-desc">
+          The GPT model used to generate structured meeting notes from the transcript.
+          Faster models cost less; more capable models produce better notes.
+        </p>
+
+        <div class="form-group">
+          <label for="model-select" class="form-label">Model</label>
+          <select id="model-select" class="form-select">
+            <option value="gpt-4o-mini">gpt-4o-mini (faster, lower cost)</option>
+            <option value="gpt-4o">gpt-4o (best quality)</option>
+            <option value="gpt-4-turbo">gpt-4-turbo</option>
+            <option value="gpt-3.5-turbo">gpt-3.5-turbo (cheapest)</option>
+          </select>
+        </div>
+
+        <div class="form-actions">
+          <button id="btn-save-model" class="btn btn-primary">Save Preference</button>
+        </div>
+
+        <p id="model-status" class="field-status" aria-live="polite"></p>
+      </section>
+
+      <!-- Privacy notice -->
+      <section class="settings-section settings-section--info">
+        <h2 class="section-title">Privacy</h2>
+        <ul class="info-list">
+          <li>Meeting audio is processed entirely in memory — never written to disk.</li>
+          <li>The raw transcript is sent directly to OpenAI from your browser.</li>
+          <li>Your API key is stored in your local browser profile (encrypted at rest by Chrome).</li>
+          <li>No analytics, telemetry, or backend servers are used by this extension.</li>
+          <li>Session data is cleared as soon as you dismiss the meeting notes.</li>
+        </ul>
+      </section>
+
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>

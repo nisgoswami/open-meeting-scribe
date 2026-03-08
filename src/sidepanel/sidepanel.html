@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Open Meeting Scribe — Live Transcript</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+
+  <!-- ── NOT ON MEET VIEW ───────────────────────────────────── -->
+  <div id="view-not-on-meet" class="panel-view hidden">
+    <div class="center-state">
+      <div class="state-icon">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="2" y="7" width="20" height="15" rx="2"/>
+          <polyline points="17 2 12 7 7 2"/>
+        </svg>
+      </div>
+      <p class="state-title">Not in a Google Meet</p>
+      <p class="state-subtitle">Open a Google Meet tab and start recording to see the live transcript here.</p>
+    </div>
+  </div>
+
+  <!-- ── IDLE VIEW ──────────────────────────────────────────── -->
+  <div id="view-idle" class="panel-view hidden">
+    <header class="panel-header">
+      <span class="panel-title">Meeting Scribe</span>
+      <button id="btn-history" class="btn btn-icon btn-ghost" title="Past meetings" aria-label="View past meetings">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <span id="history-count-label"></span>
+      </button>
+    </header>
+    <div class="center-state">
+      <div class="state-icon">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </div>
+      <p class="state-title">Ready to Record</p>
+      <p class="state-subtitle">Click <strong>Start Meeting Notes</strong> in the extension popup to begin. The live transcript will appear here.</p>
+    </div>
+  </div>
+
+  <!-- ── RECORDING VIEW ─────────────────────────────────────── -->
+  <div id="view-recording" class="panel-view hidden">
+    <header class="panel-header">
+      <div class="status-bar">
+        <span class="rec-dot" aria-hidden="true"></span>
+        <span class="rec-label">Recording</span>
+        <span id="timer" class="rec-timer" aria-live="polite">00:00</span>
+      </div>
+      <button id="btn-stop" class="btn btn-danger btn-sm" aria-label="Stop recording">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+        </svg>
+        Stop
+      </button>
+    </header>
+
+    <div class="transcript-container">
+      <div class="transcript-label">Live Transcript</div>
+      <div id="live-transcript" class="transcript-body" aria-live="polite" aria-label="Live transcript">
+        <p class="transcript-placeholder">Transcript will appear here as you speak…</p>
+      </div>
+      <div id="transcribing-indicator" class="transcribing-indicator hidden" aria-live="polite">
+        <span class="pulse-dot"></span> Transcribing…
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PROCESSING VIEW ────────────────────────────────────── -->
+  <div id="view-processing" class="panel-view hidden">
+    <div class="center-state">
+      <div class="spinner" aria-label="Processing…"></div>
+      <p id="processing-label" class="state-title">Generating notes…</p>
+      <p class="state-subtitle">Cleaning up the transcript and summarising the meeting.</p>
+    </div>
+  </div>
+
+  <!-- ── DONE VIEW (4 tabs) ─────────────────────────────────── -->
+  <div id="view-done" class="panel-view hidden">
+    <header class="panel-header panel-header--done">
+      <span class="done-title">Meeting Notes</span>
+      <div class="done-actions">
+        <button id="btn-copy-all" class="btn btn-icon" title="Copy all notes" aria-label="Copy all notes">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="9" y="9" width="13" height="13" rx="2"/>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+        </button>
+        <button id="btn-history-from-done" class="btn btn-icon btn-ghost" title="Past meetings" aria-label="View past meetings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+        </button>
+        <button id="btn-clear" class="btn btn-icon btn-ghost" title="Clear and start over" aria-label="Clear notes">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+            <path d="M10 11v6M14 11v6"/>
+            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Tab navigation -->
+    <nav class="tab-nav" role="tablist" aria-label="Notes sections">
+      <button class="tab-btn active" role="tab" aria-selected="true"  aria-controls="tab-live"    data-tab="live">Transcript</button>
+      <button class="tab-btn"        role="tab" aria-selected="false" aria-controls="tab-final"   data-tab="final">Final</button>
+      <button class="tab-btn"        role="tab" aria-selected="false" aria-controls="tab-summary" data-tab="summary">Summary</button>
+      <button class="tab-btn"        role="tab" aria-selected="false" aria-controls="tab-actions" data-tab="actions">Actions</button>
+    </nav>
+
+    <!-- Tab panels -->
+    <div class="tab-panels">
+
+      <section id="tab-live" class="tab-panel" role="tabpanel" aria-label="Live transcript">
+        <div id="done-live-transcript" class="transcript-body transcript-body--done"></div>
+      </section>
+
+      <section id="tab-final" class="tab-panel hidden" role="tabpanel" aria-label="Final transcript">
+        <div id="done-final-transcript" class="transcript-body transcript-body--done"></div>
+      </section>
+
+      <section id="tab-summary" class="tab-panel hidden" role="tabpanel" aria-label="Summary">
+        <div class="notes-section">
+          <h3 class="notes-heading">Summary</h3>
+          <p id="notes-summary" class="notes-text"></p>
+        </div>
+        <div id="section-decisions" class="notes-section">
+          <h3 class="notes-heading">Key Decisions</h3>
+          <ul id="notes-decisions" class="notes-list"></ul>
+        </div>
+      </section>
+
+      <section id="tab-actions" class="tab-panel hidden" role="tabpanel" aria-label="Action items and open questions">
+        <div id="section-actions" class="notes-section">
+          <h3 class="notes-heading">Action Items</h3>
+          <ul id="notes-actions" class="notes-list"></ul>
+        </div>
+        <div id="section-questions" class="notes-section">
+          <h3 class="notes-heading">Open Questions</h3>
+          <ul id="notes-questions" class="notes-list"></ul>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- ── ERROR VIEW ─────────────────────────────────────────── -->
+  <div id="view-error" class="panel-view hidden">
+    <div class="center-state">
+      <div class="state-icon error-icon" aria-hidden="true">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+      </div>
+      <p id="error-message" class="state-title" role="alert"></p>
+      <button id="btn-retry" class="btn btn-secondary">Try Again</button>
+    </div>
+  </div>
+
+  <!-- ── HISTORY LIST VIEW ──────────────────────────────────── -->
+  <div id="view-history" class="panel-view hidden">
+
+    <!-- Normal header -->
+    <header id="hist-header-normal" class="panel-header">
+      <button id="btn-history-back" class="btn btn-ghost btn-sm" aria-label="Back">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+        Back
+      </button>
+      <span class="panel-title">Past Meetings</span>
+      <div class="header-actions">
+        <button id="btn-history-select" class="btn btn-icon btn-ghost" title="Select items" aria-label="Select meetings to delete">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="9" cy="9" r="3"/>
+            <circle cx="15" cy="15" r="3"/>
+            <path d="M12 3v3M12 18v3M3 12h3M18 12h3"/>
+          </svg>
+          Select
+        </button>
+        <button id="btn-clear-history" class="btn btn-icon btn-ghost" title="Clear all history" aria-label="Clear all history">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+            <path d="M10 11v6M14 11v6"/>
+            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Selection mode header -->
+    <header id="hist-header-select" class="panel-header panel-header--select hidden">
+      <button id="btn-select-cancel" class="btn btn-ghost btn-sm" aria-label="Cancel selection">Cancel</button>
+      <span id="select-count" class="select-count">0 selected</span>
+      <button id="btn-delete-selected" class="btn btn-danger btn-sm" disabled aria-label="Delete selected meetings">Delete</button>
+    </header>
+
+    <div id="history-list" class="history-list" role="list"></div>
+
+    <div id="history-empty" class="center-state hidden">
+      <div class="state-icon">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12 6 12 12 16 14"/>
+        </svg>
+      </div>
+      <p class="state-title">No past meetings</p>
+      <p class="state-subtitle">Completed meetings will appear here during your browser session.</p>
+    </div>
+  </div>
+
+  <!-- ── HISTORY DETAIL VIEW ────────────────────────────────── -->
+  <div id="view-history-detail" class="panel-view hidden">
+    <header class="panel-header panel-header--done">
+      <button id="btn-detail-back" class="btn btn-ghost btn-sm" aria-label="Back to history">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+        History
+      </button>
+      <span id="detail-title" class="done-title"></span>
+      <button id="btn-detail-copy" class="btn btn-icon" title="Copy notes" aria-label="Copy this meeting's notes">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="9" width="13" height="13" rx="2"/>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+        </svg>
+      </button>
+    </header>
+
+    <!-- Tab navigation (separate from done view tabs) -->
+    <nav class="tab-nav" role="tablist" aria-label="Past meeting sections">
+      <button class="hist-tab-btn active" role="tab" aria-selected="true"  data-htab="live">Transcript</button>
+      <button class="hist-tab-btn"        role="tab" aria-selected="false" data-htab="final">Final</button>
+      <button class="hist-tab-btn"        role="tab" aria-selected="false" data-htab="summary">Summary</button>
+      <button class="hist-tab-btn"        role="tab" aria-selected="false" data-htab="actions">Actions</button>
+    </nav>
+
+    <!-- Tab panels -->
+    <div class="tab-panels">
+
+      <section id="htab-live" class="hist-tab-panel" role="tabpanel" aria-label="Live transcript">
+        <div id="hist-live-transcript" class="transcript-body transcript-body--done"></div>
+      </section>
+
+      <section id="htab-final" class="hist-tab-panel hidden" role="tabpanel" aria-label="Final transcript">
+        <div id="hist-final-transcript" class="transcript-body transcript-body--done"></div>
+      </section>
+
+      <section id="htab-summary" class="hist-tab-panel hidden" role="tabpanel" aria-label="Summary">
+        <div class="notes-section">
+          <h3 class="notes-heading">Summary</h3>
+          <p id="hist-notes-summary" class="notes-text"></p>
+        </div>
+        <div id="hist-section-decisions" class="notes-section">
+          <h3 class="notes-heading">Key Decisions</h3>
+          <ul id="hist-notes-decisions" class="notes-list"></ul>
+        </div>
+      </section>
+
+      <section id="htab-actions" class="hist-tab-panel hidden" role="tabpanel" aria-label="Action items and open questions">
+        <div id="hist-section-actions" class="notes-section">
+          <h3 class="notes-heading">Action Items</h3>
+          <ul id="hist-notes-actions" class="notes-list"></ul>
+        </div>
+        <div id="hist-section-questions" class="notes-section">
+          <h3 class="notes-heading">Open Questions</h3>
+          <ul id="hist-notes-questions" class="notes-list"></ul>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden" role="status" aria-live="polite">Copied!</div>
+
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>

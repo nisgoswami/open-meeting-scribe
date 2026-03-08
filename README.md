@@ -11,9 +11,12 @@
 
 ## Features
 
+- **Live transcript side panel** — rolling transcript appears as you speak, every ~10 seconds.
 - **One-click recording** — click Start, have your meeting, click Stop.
-- **Automatic transcription** — powered by OpenAI Whisper.
+- **Automatic transcription** — powered by OpenAI Whisper (per-segment, near real-time).
+- **Transcript cleanup** — GPT light-edit pass removes filler words and fixes punctuation.
 - **Structured meeting notes** — Summary, Key Decisions, Action Items, Open Questions.
+- **4-tab final view** — Live Transcript, Final Transcript, Summary, Actions.
 - **Privacy-first** — audio never leaves your browser until it reaches OpenAI directly.
 - **No backend** — your API key, your data.
 - **Copy to clipboard** — paste notes anywhere in seconds.
@@ -38,7 +41,7 @@ as you dismiss the notes.
 
 ## Requirements
 
-- **Chrome 116+** (required for Offscreen Document API)
+- **Chrome 116+** (required for Offscreen Document and Side Panel APIs)
 - An **OpenAI API key** — get one at [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
 - A **Google Meet** session
 
@@ -87,10 +90,12 @@ To access settings later: click the extension icon → gear icon.
 1. Join a Google Meet.
 2. Click the **Open Meeting Scribe** extension icon.
 3. Click **Start Meeting Notes**.
-4. Conduct your meeting normally.
-5. When finished, click **Stop & Generate Notes**.
-6. Wait a moment while the audio is transcribed and summarised.
-7. Read your notes, then **Copy** or **Clear** them.
+4. Click **View Live Transcript** to open the side panel — the rolling transcript appears there as you speak.
+5. Conduct your meeting normally.
+6. When finished, click **Stop & Generate Notes** (popup or side panel).
+7. Wait a moment while the final transcript is cleaned up and notes are generated.
+8. Browse the 4 tabs in the side panel: Transcript, Final, Summary, Actions.
+9. **Copy** or **Clear** when done.
 
 ---
 
@@ -124,9 +129,10 @@ open-meeting-scribe/
 │   ├── background/service-worker.js   # State machine + message routing
 │   ├── offscreen/offscreen.{html,js}  # MediaRecorder + OpenAI calls
 │   ├── popup/popup.{html,js,css}      # Extension popup UI
+│   ├── sidepanel/sidepanel.{html,js,css} # Live transcript + 4-tab notes view
 │   ├── options/options.{html,js,css}  # Settings page
 │   └── lib/
-│       ├── openai.js                  # Whisper + GPT integration
+│       ├── openai.js                  # Whisper + cleanupTranscript + GPT
 │       └── storage.js                 # chrome.storage wrappers
 ├── public/icons/                      # Extension icons
 ├── scripts/
