@@ -1,29 +1,28 @@
 /**
  * Background Service Worker — Open Meeting Scribe
  *
- * Central coordinator for the extension. Manages the state machine, bridges
- * the popup and side panel with the offscreen document, and stores transient
- * session state in chrome.storage.session (never on disk).
+ * Central coordinator for the extension. Manages the state machine and runs
+ * the final transcript-cleanup + meeting-notes pipeline via OpenAI.
+ *
+ * Audio is captured entirely by the side panel using the browser-native
+ * SpeechRecognition API — no tab-capture or offscreen document is needed.
  *
  * Message protocol (all messages use a `type` field):
  *
  *   Inbound (from popup / side panel):
- *     GET_STATE         — Caller wants the current state snapshot.
- *     START_RECORDING   — User wants to begin recording the active Meet tab.
- *     STOP_RECORDING    — User wants to end the recording and generate notes.
- *     CLEAR_NOTES       — User dismissed the notes; clear all session data.
- *
- *   Inbound (from offscreen document):
- *     RECORDING_STARTED — Offscreen successfully opened the MediaStream.
- *     TRANSCRIPT_CHUNK  — A new 10-second segment has been transcribed.
- *                         payload: { text, fullTranscript, index }
- *     NOTES_READY       — Processing finished.
- *                         payload: { notes: MeetingNotes, finalTranscript: string }
- *     PROCESSING_ERROR  — Something went wrong; payload: { error: string }
+ *     GET_STATE          — Caller wants the current state snapshot.
+ *     START_RECORDING    — User wants to begin a recording session.
+ *     STOP_RECORDING     — User wants to end the recording and generate notes.
+ *     CLEAR_NOTES        — User dismissed the notes; clear all session data.
+ *     TRANSCRIPT_CHUNK   — Side panel sends each final recognition utterance.
+ *                          payload: { text, fullTranscript }
+ *     TRANSCRIPT_READY   — Side panel finished capturing; send full transcript.
+ *                          payload: { transcript }
+ *     RECOGNITION_ERROR  — Fatal mic error from side panel.
+ *                          payload: { error: string }
  *
  *   Outbound (broadcast to all extension contexts):
- *     STATE_UPDATE      — Emitted whenever extension state changes.
- *     TRANSCRIPT_CHUNK  — Relayed immediately to the side panel.
+ *     STATE_UPDATE       — Emitted whenever extension state changes.
  */
 
 import {
@@ -37,37 +36,20 @@ import {
   clearSessionData,
   getApiKey,
   getPreferredModel,
+  getFinalTranscriptModel,
   appendToHistory,
 } from '../lib/storage.js';
 
-const OFFSCREEN_URL = chrome.runtime.getURL('src/offscreen/offscreen.html');
+import {
+  cleanupTranscript,
+  summarizeMeeting,
+} from '../lib/openai.js';
 
 // ---------------------------------------------------------------------------
-// Offscreen document lifecycle helpers
+// Module state
 // ---------------------------------------------------------------------------
 
-async function ensureOffscreenDocument() {
-  const existingContexts = await chrome.runtime.getContexts({
-    contextTypes: ['OFFSCREEN_DOCUMENT'],
-    documentUrls: [OFFSCREEN_URL],
-  });
-  if (existingContexts.length > 0) return;
-
-  await chrome.offscreen.createDocument({
-    url: OFFSCREEN_URL,
-    reasons: [chrome.offscreen.Reason.USER_MEDIA],
-    justification: 'MediaRecorder for capturing tab audio during a Google Meet session.',
-  });
-}
-
-async function closeOffscreenDocument() {
-  const existingContexts = await chrome.runtime.getContexts({
-    contextTypes: ['OFFSCREEN_DOCUMENT'],
-    documentUrls: [OFFSCREEN_URL],
-  });
-  if (existingContexts.length === 0) return;
-  await chrome.offscreen.closeDocument();
-}
+let fallbackTimer = null;
 
 // ---------------------------------------------------------------------------
 // Broadcast helpers
@@ -77,12 +59,6 @@ async function broadcastState() {
   const snapshot = await getSessionState();
   chrome.runtime.sendMessage({ type: 'STATE_UPDATE', payload: snapshot }).catch(() => {
     // No listeners open — that is fine.
-  });
-}
-
-function broadcastTranscriptChunk(payload) {
-  chrome.runtime.sendMessage({ type: 'TRANSCRIPT_CHUNK', payload }).catch(() => {
-    // Side panel may not be open yet — side panel hydrates via GET_STATE on open.
   });
 }
 
@@ -113,33 +89,15 @@ async function handleStartRecording(senderTabId) {
     };
   }
 
-  // chrome.tabCapture.getMediaStreamId must be called in the service worker.
-  let streamId;
-  try {
-    streamId = await new Promise((resolve, reject) => {
-      chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (id) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-        } else {
-          resolve(id);
-        }
-      });
-    });
-  } catch (err) {
-    return { success: false, error: `Tab capture failed: ${err.message}` };
+  // Open the side panel — SpeechRecognition starts automatically once it
+  // receives the RECORDING state update.
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (tab?.windowId) {
+    chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
   }
 
-  const model = await getPreferredModel();
-
-  await ensureOffscreenDocument();
   await setRecordingTabId(tabId);
   await setSessionState(STATE.RECORDING);
-
-  chrome.runtime.sendMessage({
-    type: 'START_RECORDING',
-    payload: { streamId, apiKey, model },
-  });
-
   await broadcastState();
   return { success: true, tabId };
 }
@@ -158,9 +116,65 @@ async function handleStopRecording() {
   await setSessionState(STATE.PROCESSING);
   await broadcastState();
 
-  chrome.runtime.sendMessage({ type: 'STOP_RECORDING' });
+  // 6-second fallback: if the side panel never sends TRANSCRIPT_READY
+  // (e.g., panel is closed or failed to respond), use whatever transcript
+  // has been accumulated in session storage.
+  fallbackTimer = setTimeout(async () => {
+    fallbackTimer = null;
+    const { liveTranscript } = await getSessionState();
+    if (liveTranscript?.trim()) {
+      await processTranscript(liveTranscript);
+    } else {
+      await setSessionState(STATE.ERROR);
+      await chrome.storage.session.set({
+        extension_error: 'No transcript captured — was the microphone enabled?',
+      });
+      await broadcastState();
+    }
+  }, 6000);
 
   return { success: true };
+}
+
+// ---------------------------------------------------------------------------
+// Transcript processing pipeline
+// ---------------------------------------------------------------------------
+
+async function processTranscript(rawTranscript) {
+  try {
+    const [apiKey, finalModel, summaryModel] = await Promise.all([
+      getApiKey(),
+      getFinalTranscriptModel(),
+      getPreferredModel(),
+    ]);
+
+    const finalTranscript = await cleanupTranscript(rawTranscript, apiKey, finalModel);
+    await setFinalTranscript(finalTranscript);
+
+    const notes = await summarizeMeeting(finalTranscript, apiKey, summaryModel);
+
+    // Read liveTranscript *after* processing so it includes everything the
+    // side panel sent via TRANSCRIPT_CHUNK during the session.
+    const { liveTranscript } = await getSessionState();
+
+    await Promise.all([
+      setNotes(notes),
+      setSessionState(STATE.DONE),
+      appendToHistory({
+        id: Date.now().toString(),
+        timestamp: Date.now(),
+        liveTranscript,
+        finalTranscript,
+        notes,
+      }),
+    ]);
+
+    await broadcastState();
+  } catch (err) {
+    await setSessionState(STATE.ERROR);
+    await chrome.storage.session.set({ extension_error: err.message });
+    await broadcastState();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -192,8 +206,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
 
     case 'START_RECORDING':
-      handleStartRecording(sender.tab?.id ?? payload?.tabId)
-        .then(sendResponse);
+      handleStartRecording(sender.tab?.id ?? payload?.tabId).then(sendResponse);
       return true;
 
     case 'STOP_RECORDING':
@@ -203,41 +216,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'CLEAR_NOTES':
       clearSessionData()
         .then(() => broadcastState())
-        .then(() => closeOffscreenDocument())
         .then(() => sendResponse({ success: true }));
       return true;
 
-    // --- From offscreen document ---
-
-    case 'RECORDING_STARTED':
-      broadcastState();
-      break;
-
     case 'TRANSCRIPT_CHUNK':
-      // Persist the running full transcript, then relay the chunk to the side panel.
-      setLiveTranscript(payload.fullTranscript)
-        .then(() => broadcastTranscriptChunk(payload));
+      // Sent by the side panel on each committed final recognition utterance.
+      // Store the running transcript but do NOT relay back to avoid loops —
+      // the side panel already updates its own UI directly.
+      setLiveTranscript(payload.fullTranscript);
       break;
 
-    case 'NOTES_READY':
-      // Capture liveTranscript before state mutation, then save session + history together.
-      getSessionState().then(({ liveTranscript }) =>
-        Promise.all([
-          setNotes(payload.notes),
-          setFinalTranscript(payload.finalTranscript),
-          setSessionState(STATE.DONE),
-          appendToHistory({
-            id: Date.now().toString(),
-            timestamp: Date.now(),
-            liveTranscript,
-            finalTranscript: payload.finalTranscript,
-            notes: payload.notes,
-          }),
-        ])
-      ).then(() => broadcastState());
+    case 'TRANSCRIPT_READY':
+      // Side panel finished stopping SpeechRecognition and sends the full
+      // transcript.  Clear the fallback timer and start the AI pipeline.
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+      }
+      processTranscript(payload.transcript ?? '');
       break;
 
-    case 'PROCESSING_ERROR':
+    case 'RECOGNITION_ERROR':
+      // Fatal microphone error (permission denied, etc.) reported by side panel.
       setSessionState(STATE.ERROR)
         .then(() => chrome.storage.session.set({ extension_error: payload.error }))
         .then(() => broadcastState());
@@ -257,7 +257,6 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     chrome.runtime.openOptionsPage();
   }
   await clearSessionData();
-  await closeOffscreenDocument().catch(() => {});
 });
 
 // ---------------------------------------------------------------------------
@@ -268,8 +267,6 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
  * Draws the base icon onto an OffscreenCanvas and optionally overlays a
  * red recording dot in the bottom-right corner.
  *
- * Uses OffscreenCanvas which is available in MV3 service workers.
- *
  * @param {boolean} recording - Whether to render the red dot.
  */
 async function updateToolbarIcon(recording) {
@@ -277,7 +274,6 @@ async function updateToolbarIcon(recording) {
   const canvas = new OffscreenCanvas(SIZE, SIZE);
   const ctx = canvas.getContext('2d');
 
-  // Fetch the base icon and draw it.
   const response = await fetch(chrome.runtime.getURL('public/icons/icon128_base.png'));
   const blob = await response.blob();
   const bitmap = await createImageBitmap(blob);
@@ -285,18 +281,15 @@ async function updateToolbarIcon(recording) {
   bitmap.close();
 
   if (recording) {
-    // Red dot — bottom-right quadrant, 28px radius.
     const cx = SIZE - 26;
     const cy = SIZE - 26;
     const r  = 22;
 
-    // White halo for contrast on any background.
     ctx.beginPath();
     ctx.arc(cx, cy, r + 4, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     ctx.fill();
 
-    // Red fill.
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fillStyle = '#e53e3e';
@@ -304,19 +297,11 @@ async function updateToolbarIcon(recording) {
   }
 
   const imageData = ctx.getImageData(0, 0, SIZE, SIZE);
-
-  await chrome.action.setIcon({
-    imageData: {
-      128: imageData,
-      // Chrome scales from 128 automatically for smaller sizes.
-    },
-  });
+  await chrome.action.setIcon({ imageData: { 128: imageData } });
 }
 
-// Listen for state changes to toggle the dot.
 chrome.storage.session.onChanged.addListener((changes) => {
   if (!changes.extension_state) return;
   const newState = changes.extension_state.newValue;
-  const isRecording = newState === 'RECORDING';
-  updateToolbarIcon(isRecording).catch(() => {});
+  updateToolbarIcon(newState === 'RECORDING').catch(() => {});
 });

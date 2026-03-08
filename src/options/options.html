@@ -23,7 +23,7 @@
 
     <main class="page-content">
 
-      <!-- API Key section -->
+      <!-- ── API Key ───────────────────────────────────────────── -->
       <section class="settings-section">
         <h2 class="section-title">OpenAI API Key</h2>
         <p class="section-desc">
@@ -58,37 +58,86 @@
         </div>
       </section>
 
-      <!-- Model preference section -->
+      <!-- ── AI Models ─────────────────────────────────────────── -->
       <section class="settings-section">
-        <h2 class="section-title">Summary Model</h2>
+        <h2 class="section-title">Best Models for Open Meeting Scribe</h2>
         <p class="section-desc">
-          The GPT model used to generate structured meeting notes from the transcript.
-          Faster models cost less; more capable models produce better notes.
+          Each step of the pipeline uses a different OpenAI model optimised for that task.
+          Defaults are pre-selected based on the recommended configuration below.
         </p>
 
-        <div class="form-group">
-          <label for="model-select" class="form-label">Model</label>
-          <select id="model-select" class="form-select">
-            <option value="gpt-4o-mini">gpt-4o-mini (faster, lower cost)</option>
-            <option value="gpt-4o">gpt-4o (best quality)</option>
-            <option value="gpt-4-turbo">gpt-4-turbo</option>
-            <option value="gpt-3.5-turbo">gpt-3.5-turbo (cheapest)</option>
-          </select>
+        <!-- 1. Live transcript -->
+        <div class="model-group">
+          <div class="model-group-header">
+            <span class="model-step-badge">1</span>
+            <div>
+              <p class="model-group-title">Live Transcript <span class="model-group-when">during the meeting</span></p>
+              <p class="model-group-desc">Transcribes each 10-second audio segment in real time. Optimised for low latency and continuous streaming.</p>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="live-model-select" class="form-label">Model</label>
+            <select id="live-model-select" class="form-select">
+              <option value="gpt-realtime-mini">gpt-realtime-mini — low latency, designed for live streaming (recommended)</option>
+              <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe — fast, balanced accuracy</option>
+              <option value="gpt-4o-transcribe">gpt-4o-transcribe — highest accuracy</option>
+              <option value="whisper-1">whisper-1 — legacy</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 2. Final transcript -->
+        <div class="model-group">
+          <div class="model-group-header">
+            <span class="model-step-badge">2</span>
+            <div>
+              <p class="model-group-title">Final Transcript <span class="model-group-when">after meeting ends</span></p>
+              <p class="model-group-desc">Runs once after recording stops to clean up punctuation, remove filler words, and add paragraph breaks. Handles messy audio and multiple speakers.</p>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="final-model-select" class="form-label">Model</label>
+            <select id="final-model-select" class="form-select">
+              <option value="gpt-4o-transcribe">gpt-4o-transcribe — very accurate, multi-speaker support (recommended)</option>
+              <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe — faster, lower cost</option>
+              <option value="gpt-4o-mini">gpt-4o-mini — GPT-based cleanup pass</option>
+              <option value="gpt-4o">gpt-4o — highest quality cleanup</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 3. Meeting summary -->
+        <div class="model-group model-group--last">
+          <div class="model-group-header">
+            <span class="model-step-badge">3</span>
+            <div>
+              <p class="model-group-title">Meeting Summary <span class="model-group-when">structured notes generation</span></p>
+              <p class="model-group-desc">Generates structured notes from the final transcript: summary, key decisions, action items, and open questions. Strong structured-output reasoning is key.</p>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="summary-model-select" class="form-label">Model</label>
+            <select id="summary-model-select" class="form-select">
+              <option value="gpt-5-mini">gpt-5-mini — strong reasoning, cost-efficient (recommended)</option>
+              <option value="gpt-4o-mini">gpt-4o-mini — fast, good quality</option>
+              <option value="gpt-4o">gpt-4o — high quality</option>
+              <option value="gpt-4-turbo">gpt-4-turbo</option>
+            </select>
+          </div>
         </div>
 
         <div class="form-actions">
-          <button id="btn-save-model" class="btn btn-primary">Save Preference</button>
+          <button id="btn-save-models" class="btn btn-primary">Save Model Preferences</button>
         </div>
-
-        <p id="model-status" class="field-status" aria-live="polite"></p>
+        <p id="models-status" class="field-status" aria-live="polite"></p>
       </section>
 
-      <!-- Privacy notice -->
+      <!-- ── Privacy ────────────────────────────────────────────── -->
       <section class="settings-section settings-section--info">
         <h2 class="section-title">Privacy</h2>
         <ul class="info-list">
           <li>Meeting audio is processed entirely in memory — never written to disk.</li>
-          <li>The raw transcript is sent directly to OpenAI from your browser.</li>
+          <li>Transcripts are sent directly to OpenAI from your browser using your own API key.</li>
           <li>Your API key is stored in your local browser profile (encrypted at rest by Chrome).</li>
           <li>No analytics, telemetry, or backend servers are used by this extension.</li>
           <li>Session data is cleared as soon as you dismiss the meeting notes.</li>

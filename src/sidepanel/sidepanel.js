@@ -1,12 +1,15 @@
 /**
  * Side Panel Script — Open Meeting Scribe
  *
- * Persistent sidebar that displays:
- *   - Live rolling transcript during recording (appended per segment)
- *   - Tabbed final notes after the meeting ends
- *   - History list of past meetings with multiselect delete
- *   - History detail view for any past meeting
+ * Persistent sidebar that:
+ *   - Drives live transcription via SpeechRecognition (MeetingSessionController)
+ *   - Shows a rolling live transcript (final utterances + current interim text)
+ *   - Displays tabbed meeting notes after the session ends
+ *   - Keeps a history list of all meetings in the current browser session
+ *   - Supports multiselect delete of past meetings
  */
+
+import { MeetingSessionController } from '../lib/MeetingSessionController.js';
 
 // ---------------------------------------------------------------------------
 // DOM references
@@ -81,6 +84,43 @@ let activeHistoryEntry = null;
 let selectionMode      = false;
 const selectedIds      = new Set();
 
+// Recognition lifecycle flag — prevents double-starting when multiple
+// RECORDING state updates arrive for the same session.
+let recognitionActive = false;
+
+// The floating interim <p> element at the bottom of the live transcript.
+let interimEl = null;
+
+// ---------------------------------------------------------------------------
+// SpeechRecognition controller
+// ---------------------------------------------------------------------------
+
+const sessionController = new MeetingSessionController({
+  onUpdate: (finalText, interimText) => updateLiveTranscript(finalText, interimText),
+  onChunk:  (text, fullTranscript)   => handleTranscriptChunk(text, fullTranscript),
+  onError:  (message, fatal)         => handleRecognitionError(message, fatal),
+});
+
+function handleTranscriptChunk(text, fullTranscript) {
+  // Persist the running transcript in session storage via the service worker.
+  // The side panel already updates its own UI directly via appendFinalUtterance.
+  chrome.runtime.sendMessage({
+    type: 'TRANSCRIPT_CHUNK',
+    payload: { text, fullTranscript },
+  }).catch(() => {});
+}
+
+function handleRecognitionError(message, fatal) {
+  console.warn('[SpeechRecognition]', message);
+  if (fatal) {
+    recognitionActive = false;
+    chrome.runtime.sendMessage({
+      type: 'RECOGNITION_ERROR',
+      payload: { error: message },
+    }).catch(() => {});
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Timer
 // ---------------------------------------------------------------------------
@@ -122,7 +162,7 @@ async function isOnMeetTab() {
 }
 
 // ---------------------------------------------------------------------------
-// Live transcript
+// Live transcript — final utterances + interim
 // ---------------------------------------------------------------------------
 
 function clearPlaceholder() {
@@ -134,16 +174,60 @@ function isNearBottom() {
   return el.scrollHeight - el.clientHeight <= el.scrollTop + 60;
 }
 
-function appendTranscriptChunk(text) {
+/**
+ * Append a committed final utterance as a permanent <p> element.
+ * Temporarily removes the floating interim element so DOM order stays correct,
+ * then reattaches it afterwards.
+ */
+function appendFinalUtterance(text) {
   if (!text?.trim()) return;
   clearPlaceholder();
+
+  if (interimEl?.isConnected) interimEl.remove();
+
   const shouldScroll = isNearBottom();
   const p = document.createElement('p');
   p.textContent = text.trim();
   liveTranscriptEl.appendChild(p);
+
+  if (interimEl) liveTranscriptEl.appendChild(interimEl);
   if (shouldScroll) liveTranscriptEl.scrollTop = liveTranscriptEl.scrollHeight;
 }
 
+/**
+ * Called on every recognition event (final or interim).
+ * Manages the live interim <p> and the "Listening…" indicator.
+ */
+function updateLiveTranscript(finalText, interimText) {
+  transcribingIndicator.classList.remove('hidden');
+  clearTimeout(transcribingIndicator._hideTimer);
+  transcribingIndicator._hideTimer = setTimeout(
+    () => transcribingIndicator.classList.add('hidden'),
+    1500,
+  );
+
+  if (interimText) {
+    clearPlaceholder();
+    if (!interimEl || !interimEl.isConnected) {
+      interimEl = document.createElement('p');
+      interimEl.className = 'transcript-interim';
+      liveTranscriptEl.appendChild(interimEl);
+    }
+    interimEl.textContent = interimText;
+    if (isNearBottom()) liveTranscriptEl.scrollTop = liveTranscriptEl.scrollHeight;
+  } else {
+    // Final result delivered — remove the interim element.
+    if (interimEl?.isConnected) {
+      interimEl.remove();
+      interimEl = null;
+    }
+  }
+}
+
+/**
+ * Hydrate the live transcript area from session storage when the panel
+ * (re)opens mid-session.
+ */
 function hydrateTranscript(fullTranscript) {
   if (!fullTranscript?.trim()) return;
   clearPlaceholder();
@@ -172,11 +256,28 @@ async function render(snapshot) {
   switch (state) {
     case 'IDLE':
       stopTimer();
+      if (recognitionActive) {
+        recognitionActive = false;
+        sessionController.stop().catch(() => {});
+      }
       showView('idle');
       break;
 
     case 'RECORDING':
       startTimer();
+      if (!recognitionActive) {
+        recognitionActive = true;
+        if (!sessionController.isSupported) {
+          chrome.runtime.sendMessage({
+            type: 'RECOGNITION_ERROR',
+            payload: { error: 'Web Speech API is not supported in this browser.' },
+          }).catch(() => {});
+          recognitionActive = false;
+          break;
+        }
+        sessionController.start();
+      }
+      // Hydrate from session storage if the panel just (re)opened mid-session.
       if (liveTranscript && liveTranscriptEl.childElementCount === 0) {
         hydrateTranscript(liveTranscript);
       }
@@ -186,6 +287,16 @@ async function render(snapshot) {
     case 'PROCESSING':
       stopTimer();
       showView('processing');
+      // Stop recognition and forward the final transcript to the service worker.
+      if (recognitionActive) {
+        recognitionActive = false;
+        sessionController.stop().then((transcript) => {
+          chrome.runtime.sendMessage({
+            type: 'TRANSCRIPT_READY',
+            payload: { transcript },
+          }).catch(() => {});
+        });
+      }
       break;
 
     case 'DONE':
@@ -196,6 +307,10 @@ async function render(snapshot) {
 
     case 'ERROR': {
       stopTimer();
+      if (recognitionActive) {
+        recognitionActive = false;
+        sessionController.stop().catch(() => {});
+      }
       const errRaw = await chrome.storage.session.get('extension_error');
       errorMessage.textContent = errRaw.extension_error ?? 'An unexpected error occurred.';
       showView('error');
@@ -254,13 +369,13 @@ function switchTab(btnSet, panelSet, targetId) {
 
 tabBtns.forEach((btn) => {
   btn.addEventListener('click', () =>
-    switchTab(tabBtns, document.querySelectorAll('.tab-panel'), btn.dataset.tab)
+    switchTab(tabBtns, document.querySelectorAll('.tab-panel'), btn.dataset.tab),
   );
 });
 
 histTabBtns.forEach((btn) => {
   btn.addEventListener('click', () =>
-    switchTab(histTabBtns, document.querySelectorAll('.hist-tab-panel'), btn.dataset.htab)
+    switchTab(histTabBtns, document.querySelectorAll('.hist-tab-panel'), btn.dataset.htab),
   );
 });
 
@@ -319,7 +434,7 @@ function buildHistoryItem(entry) {
   item.setAttribute('role', 'listitem');
   item.dataset.id = entry.id;
 
-  const date = new Date(entry.timestamp);
+  const date    = new Date(entry.timestamp);
   const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
   const preview = entry.notes?.summary
@@ -359,7 +474,7 @@ function buildHistoryItem(entry) {
 function openHistoryDetail(entry) {
   activeHistoryEntry = entry;
 
-  const date = new Date(entry.timestamp);
+  const date    = new Date(entry.timestamp);
   const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
   detailTitle.textContent = `${dateStr}, ${timeStr}`;
@@ -399,9 +514,8 @@ function exitSelectionMode() {
   histHeaderNormal.classList.remove('hidden');
   histHeaderSelect.classList.add('hidden');
   historyListEl.classList.remove('selecting');
-  // Clear visual selection state on all items
   historyListEl.querySelectorAll('.history-item.selected').forEach((el) =>
-    el.classList.remove('selected')
+    el.classList.remove('selected'),
   );
 }
 
@@ -418,8 +532,8 @@ function toggleItemSelection(itemEl, id) {
 
 function updateSelectCount() {
   const n = selectedIds.size;
-  selectCountEl.textContent = n === 1 ? '1 selected' : `${n} selected`;
-  btnDeleteSelected.disabled = n === 0;
+  selectCountEl.textContent     = n === 1 ? '1 selected' : `${n} selected`;
+  btnDeleteSelected.disabled    = n === 0;
   btnDeleteSelected.textContent = n > 0 ? `Delete (${n})` : 'Delete';
 }
 
@@ -446,14 +560,14 @@ async function buildClipboardText() {
   ]);
   return formatNotesForClipboard(
     snap.meeting_notes,
-    snap.final_transcript || snap.live_transcript || ''
+    snap.final_transcript || snap.live_transcript || '',
   );
 }
 
 function buildClipboardTextFromEntry(entry) {
   return formatNotesForClipboard(
     entry.notes,
-    entry.finalTranscript || entry.liveTranscript || ''
+    entry.finalTranscript || entry.liveTranscript || '',
   );
 }
 
@@ -513,6 +627,7 @@ btnClear.addEventListener('click', async () => {
   await chrome.runtime.sendMessage({ type: 'CLEAR_NOTES' });
   liveTranscriptEl.innerHTML =
     '<p class="transcript-placeholder">Transcript will appear here as you speak…</p>';
+  interimEl = null;
 });
 
 btnRetry.addEventListener('click', async () => {
@@ -527,7 +642,6 @@ btnHistoryBack.addEventListener('click', () => showView(historyReturnView));
 
 // Selection mode controls
 btnHistorySelect.addEventListener('click', enterSelectionMode);
-
 btnSelectCancel.addEventListener('click', exitSelectionMode);
 
 btnDeleteSelected.addEventListener('click', async () => {
@@ -562,19 +676,8 @@ btnDetailCopy.addEventListener('click', async () => {
 
 chrome.runtime.onMessage.addListener((message) => {
   const { type, payload } = message;
-
   if (type === 'STATE_UPDATE') {
     render(payload);
-    return;
-  }
-
-  if (type === 'TRANSCRIPT_CHUNK') {
-    transcribingIndicator.classList.remove('hidden');
-    clearTimeout(transcribingIndicator._hideTimer);
-    transcribingIndicator._hideTimer = setTimeout(() => {
-      transcribingIndicator.classList.add('hidden');
-    }, 1500);
-    appendTranscriptChunk(payload.text);
   }
 });
 

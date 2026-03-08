@@ -261,6 +261,13 @@ body {
   font-style: italic;
 }
 
+/* In-progress speech hypothesis — shown while the user is still speaking */
+.transcript-interim {
+  color: var(--color-text-muted) !important;
+  font-style: italic;
+  border-left-color: var(--color-border) !important;
+}
+
 /* Transcribing indicator */
 .transcribing-indicator {
   position: sticky;

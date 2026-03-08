@@ -2,15 +2,17 @@
   "manifest_version": 3,
   "name": "Open Meeting Scribe",
   "short_name": "Meeting Scribe",
-  "version": "1.1.0",
-  "description": "Records Google Meet audio, streams a live transcript, and generates structured meeting notes using OpenAI. No backend required. Your API key, your data.",
+  "version": "1.2.0",
+  "description": "Transcribes Google Meet in real time using your browser's built-in speech recognition, then generates structured meeting notes via OpenAI. No backend required. Your API key, your data.",
 
   "permissions": [
-    "tabCapture",
-    "offscreen",
     "storage",
     "activeTab",
     "sidePanel"
+  ],
+
+  "optional_permissions": [
+    "microphone"
   ],
 
   "host_permissions": [
