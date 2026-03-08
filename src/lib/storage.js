@@ -10,12 +10,33 @@
 /** Keys used across storage layers. */
 export const STORAGE_KEYS = {
   API_KEY: 'openai_api_key',
-  /** GPT model for meeting summary generation. */
+  /** GPT model for meeting summary generation (legacy; used as OpenAI fallback). */
   PREFERRED_MODEL: 'preferred_summary_model',
   /** Model used for per-segment live transcription (audio → text). */
   LIVE_TRANSCRIPT_MODEL: 'live_transcript_model',
-  /** Model used for the final transcript cleanup pass (chat completion). */
+  /** Model used for the final transcript cleanup pass (legacy; used as OpenAI fallback). */
   FINAL_TRANSCRIPT_MODEL: 'final_transcript_model',
+  /** Whether to attempt Meet caption scraping before speech recognition. */
+  USE_MEET_CAPTIONS: 'use_meet_captions',
+
+  // ── Provider settings ──────────────────────────────────────────────────────
+  /** Provider for meeting summary: 'openai' | 'deepseek' | 'lmstudio' | 'ollama' | 'custom' */
+  SUMMARY_PROVIDER: 'summary_provider',
+  /** Base URL for summary provider (lmstudio / ollama / custom). */
+  SUMMARY_BASE_URL: 'summary_base_url',
+  /** API key for summary provider (deepseek / custom). */
+  SUMMARY_API_KEY: 'summary_api_key',
+  /** Model override for summary provider. */
+  SUMMARY_MODEL: 'summary_model',
+
+  /** Provider for transcript cleanup: 'openai' | 'skip' | 'lmstudio' | 'ollama' | 'custom' */
+  CLEANUP_PROVIDER: 'cleanup_provider',
+  /** Base URL for cleanup provider (lmstudio / ollama / custom). */
+  CLEANUP_BASE_URL: 'cleanup_base_url',
+  /** API key for cleanup provider (custom). */
+  CLEANUP_API_KEY: 'cleanup_api_key',
+  /** Model override for cleanup provider. */
+  CLEANUP_MODEL: 'cleanup_model',
   STATE: 'extension_state',
   NOTES: 'meeting_notes',
   RECORDING_TAB_ID: 'recording_tab_id',
@@ -86,6 +107,62 @@ export async function getFinalTranscriptModel() {
 
 export async function setFinalTranscriptModel(model) {
   await chrome.storage.local.set({ [STORAGE_KEYS.FINAL_TRANSCRIPT_MODEL]: model });
+}
+
+// ---------------------------------------------------------------------------
+// Experimental settings — persisted to chrome.storage.local
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Provider settings — persisted to chrome.storage.local
+// ---------------------------------------------------------------------------
+
+export async function getProviderSettings() {
+  const keys = [
+    STORAGE_KEYS.SUMMARY_PROVIDER,
+    STORAGE_KEYS.SUMMARY_BASE_URL,
+    STORAGE_KEYS.SUMMARY_API_KEY,
+    STORAGE_KEYS.SUMMARY_MODEL,
+    STORAGE_KEYS.CLEANUP_PROVIDER,
+    STORAGE_KEYS.CLEANUP_BASE_URL,
+    STORAGE_KEYS.CLEANUP_API_KEY,
+    STORAGE_KEYS.CLEANUP_MODEL,
+  ];
+  return chrome.storage.local.get(keys);
+}
+
+export async function setProviderSettings(settings) {
+  const allowed = [
+    STORAGE_KEYS.SUMMARY_PROVIDER,
+    STORAGE_KEYS.SUMMARY_BASE_URL,
+    STORAGE_KEYS.SUMMARY_API_KEY,
+    STORAGE_KEYS.SUMMARY_MODEL,
+    STORAGE_KEYS.CLEANUP_PROVIDER,
+    STORAGE_KEYS.CLEANUP_BASE_URL,
+    STORAGE_KEYS.CLEANUP_API_KEY,
+    STORAGE_KEYS.CLEANUP_MODEL,
+  ];
+  const toSave = {};
+  for (const key of allowed) {
+    if (settings[key] !== undefined) toSave[key] = settings[key];
+  }
+  if (Object.keys(toSave).length > 0) {
+    await chrome.storage.local.set(toSave);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Experimental settings — persisted to chrome.storage.local
+// ---------------------------------------------------------------------------
+
+/** Returns true if the experimental Meet captions transcript source is enabled. */
+export async function getUseMeetCaptions() {
+  const result = await chrome.storage.local.get(STORAGE_KEYS.USE_MEET_CAPTIONS);
+  return result[STORAGE_KEYS.USE_MEET_CAPTIONS] ?? false;
+}
+
+export async function setUseMeetCaptions(value) {
+  await chrome.storage.local.set({ [STORAGE_KEYS.USE_MEET_CAPTIONS]: Boolean(value) });
 }
 
 // ---------------------------------------------------------------------------

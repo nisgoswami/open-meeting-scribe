@@ -1,7 +1,7 @@
 {
   "name": "open-meeting-scribe",
   "version": "1.0.0",
-  "description": "Chrome extension for Google Meet that records tab audio and generates structured meeting notes using OpenAI.",
+  "description": "Chrome extension for Google Meet that records audio and generates structured meeting notes using OpenAI, DeepSeek, LM Studio, Ollama, or any OpenAI-compatible endpoint.",
   "private": true,
   "scripts": {
     "generate-icons": "node scripts/generate-icons.js",
@@ -23,7 +23,7 @@
     "transcription",
     "manifest-v3"
   ],
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "repository": {
     "type": "git",
     "url": "https://github.com/your-username/open-meeting-scribe"

@@ -332,3 +332,176 @@ body {
 }
 
 .toast.hidden { display: none; }
+
+.hidden { display: none !important; }
+
+/* ---- Experimental section ---- */
+
+.settings-section--experimental {
+  border-color: #d97706;
+  background: #fffbeb;
+}
+
+@media (prefers-color-scheme: dark) {
+  .settings-section--experimental {
+    background: #1c1a0f;
+    border-color: #92400e;
+  }
+}
+
+.experimental-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+@media (prefers-color-scheme: dark) {
+  .experimental-badge {
+    color: #fbbf24;
+    background: #1c1a0f;
+    border-color: #92400e;
+  }
+}
+
+/* ---- Toggle row (label + switch side by side) ---- */
+
+.toggle-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.toggle-row > div {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---- Toggle switch ---- */
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--color-border);
+  border-radius: 22px;
+  transition: background 0.2s;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  transition: transform 0.2s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--color-primary);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(18px);
+}
+
+.toggle-switch input:focus-visible + .toggle-slider {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* ---- Helper text under form fields ---- */
+
+.field-hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-top: 4px;
+  line-height: 1.55;
+}
+
+.field-hint a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+.field-hint a:hover { text-decoration: underline; }
+
+.field-hint code {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  background: var(--color-border);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* ---- Provider groups (within Provider Settings section) ---- */
+
+.provider-group {
+  padding: 16px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.provider-group--last {
+  margin-bottom: 20px;
+}
+
+.provider-group-header {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+/* ---- Provider field panels (show/hide per selected provider) ---- */
+
+.provider-fields {
+  margin-top: 4px;
+}
+
+.provider-fields.hidden {
+  display: none;
+}
+
+/* ---- Divider between provider sub-sections ---- */
+
+.provider-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 0;
+}
+
+/* ---- Optional label annotation ---- */
+
+.form-label-optional {
+  font-weight: 400;
+  color: var(--color-text-muted);
+  font-size: 11px;
+}

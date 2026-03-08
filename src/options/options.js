@@ -2,26 +2,24 @@
  * Options / Settings Page — Open Meeting Scribe
  *
  * Handles saving / loading:
- *   - OpenAI API key (chrome.storage.local, Chrome-encrypted)
- *   - Live transcript model preference
- *   - Final transcript model preference
- *   - Meeting summary model preference
+ *   - OpenAI API key
+ *   - Provider settings (cleanup + summary)
+ *   - Experimental: Meet captions toggle
  */
 
 import {
+  STORAGE_KEYS,
   getApiKey,
   setApiKey,
   clearApiKey,
-  getPreferredModel,
-  setPreferredModel,
-  getLiveTranscriptModel,
-  setLiveTranscriptModel,
-  getFinalTranscriptModel,
-  setFinalTranscriptModel,
+  getProviderSettings,
+  setProviderSettings,
+  getUseMeetCaptions,
+  setUseMeetCaptions,
 } from '../lib/storage.js';
 
 // ---------------------------------------------------------------------------
-// DOM references
+// DOM references — API key
 // ---------------------------------------------------------------------------
 
 const apiKeyInput         = document.getElementById('api-key');
@@ -31,13 +29,42 @@ const apiKeyStatus        = document.getElementById('api-key-status');
 const btnSaveKey          = document.getElementById('btn-save-key');
 const btnClearKey         = document.getElementById('btn-clear-key');
 
-const liveModelSelect     = document.getElementById('live-model-select');
-const finalModelSelect    = document.getElementById('final-model-select');
-const summaryModelSelect  = document.getElementById('summary-model-select');
-const modelsStatus        = document.getElementById('models-status');
-const btnSaveModels       = document.getElementById('btn-save-models');
+// ---------------------------------------------------------------------------
+// DOM references — providers
+// ---------------------------------------------------------------------------
 
-const toast               = document.getElementById('toast');
+const apiKeySection         = document.getElementById('api-key-section');
+
+const cleanupProviderSelect = document.getElementById('cleanup-provider');
+const summaryProviderSelect = document.getElementById('summary-provider');
+const btnSaveProviders      = document.getElementById('btn-save-providers');
+const providersStatus       = document.getElementById('providers-status');
+
+// Cleanup provider field containers
+const cleanupFieldSets = {
+  openai:   document.getElementById('cleanup-fields-openai'),
+  lmstudio: document.getElementById('cleanup-fields-lmstudio'),
+  ollama:   document.getElementById('cleanup-fields-ollama'),
+  custom:   document.getElementById('cleanup-fields-custom'),
+};
+
+// Summary provider field containers
+const summaryFieldSets = {
+  openai:    document.getElementById('summary-fields-openai'),
+  deepseek:  document.getElementById('summary-fields-deepseek'),
+  lmstudio:  document.getElementById('summary-fields-lmstudio'),
+  ollama:    document.getElementById('summary-fields-ollama'),
+  custom:    document.getElementById('summary-fields-custom'),
+};
+
+// ---------------------------------------------------------------------------
+// DOM references — experimental
+// ---------------------------------------------------------------------------
+
+const useMeetCaptionsToggle = document.getElementById('use-meet-captions');
+const captionsStatus        = document.getElementById('captions-status');
+
+const toast = document.getElementById('toast');
 
 // ---------------------------------------------------------------------------
 // Toast
@@ -120,27 +147,120 @@ btnClearKey.addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Model preferences — save all three
+// Provider field visibility
 // ---------------------------------------------------------------------------
 
-btnSaveModels.addEventListener('click', async () => {
-  btnSaveModels.disabled = true;
+function showProviderFields(fieldSets, selectedProvider) {
+  for (const [id, el] of Object.entries(fieldSets)) {
+    el.classList.toggle('hidden', id !== selectedProvider);
+  }
+}
+
+function updateApiKeyVisibility() {
+  const needsOpenAIKey =
+    cleanupProviderSelect.value === 'openai' ||
+    summaryProviderSelect.value === 'openai';
+  apiKeySection.classList.toggle('hidden', !needsOpenAIKey);
+}
+
+cleanupProviderSelect.addEventListener('change', () => {
+  showProviderFields(cleanupFieldSets, cleanupProviderSelect.value);
+  updateApiKeyVisibility();
+});
+
+summaryProviderSelect.addEventListener('change', () => {
+  showProviderFields(summaryFieldSets, summaryProviderSelect.value);
+  updateApiKeyVisibility();
+});
+
+// ---------------------------------------------------------------------------
+// Provider settings — save
+// ---------------------------------------------------------------------------
+
+btnSaveProviders.addEventListener('click', async () => {
+  btnSaveProviders.disabled = true;
   try {
-    await Promise.all([
-      setLiveTranscriptModel(liveModelSelect.value),
-      setFinalTranscriptModel(finalModelSelect.value),
-      setPreferredModel(summaryModelSelect.value),
-    ]);
-    setStatus(modelsStatus, 'Model preferences saved.', 'success');
-    showToast('Preferences saved!');
-    setTimeout(() => setStatus(modelsStatus, ''), 3000);
+    const cleanupProvider = cleanupProviderSelect.value;
+    const summaryProvider = summaryProviderSelect.value;
+
+    const settings = {
+      [STORAGE_KEYS.CLEANUP_PROVIDER]: cleanupProvider,
+      [STORAGE_KEYS.SUMMARY_PROVIDER]: summaryProvider,
+    };
+
+    // Collect cleanup fields based on selected provider
+    switch (cleanupProvider) {
+      case 'openai':
+        settings[STORAGE_KEYS.CLEANUP_MODEL] =
+          document.getElementById('cleanup-openai-model').value;
+        break;
+      case 'lmstudio':
+        settings[STORAGE_KEYS.CLEANUP_BASE_URL] =
+          document.getElementById('cleanup-lmstudio-url').value.trim();
+        settings[STORAGE_KEYS.CLEANUP_MODEL] =
+          document.getElementById('cleanup-lmstudio-model').value.trim();
+        break;
+      case 'ollama':
+        settings[STORAGE_KEYS.CLEANUP_BASE_URL] =
+          document.getElementById('cleanup-ollama-url').value.trim();
+        settings[STORAGE_KEYS.CLEANUP_MODEL] =
+          document.getElementById('cleanup-ollama-model').value.trim();
+        break;
+      case 'custom':
+        settings[STORAGE_KEYS.CLEANUP_BASE_URL] =
+          document.getElementById('cleanup-custom-url').value.trim();
+        settings[STORAGE_KEYS.CLEANUP_API_KEY] =
+          document.getElementById('cleanup-custom-key').value.trim();
+        settings[STORAGE_KEYS.CLEANUP_MODEL] =
+          document.getElementById('cleanup-custom-model').value.trim();
+        break;
+    }
+
+    // Collect summary fields based on selected provider
+    switch (summaryProvider) {
+      case 'openai':
+        settings[STORAGE_KEYS.SUMMARY_MODEL] =
+          document.getElementById('summary-openai-model').value;
+        break;
+      case 'deepseek':
+        settings[STORAGE_KEYS.SUMMARY_API_KEY] =
+          document.getElementById('summary-deepseek-key').value.trim();
+        settings[STORAGE_KEYS.SUMMARY_MODEL] =
+          document.getElementById('summary-deepseek-model').value;
+        break;
+      case 'lmstudio':
+        settings[STORAGE_KEYS.SUMMARY_BASE_URL] =
+          document.getElementById('summary-lmstudio-url').value.trim();
+        settings[STORAGE_KEYS.SUMMARY_MODEL] =
+          document.getElementById('summary-lmstudio-model').value.trim();
+        break;
+      case 'ollama':
+        settings[STORAGE_KEYS.SUMMARY_BASE_URL] =
+          document.getElementById('summary-ollama-url').value.trim();
+        settings[STORAGE_KEYS.SUMMARY_MODEL] =
+          document.getElementById('summary-ollama-model').value.trim();
+        break;
+      case 'custom':
+        settings[STORAGE_KEYS.SUMMARY_BASE_URL] =
+          document.getElementById('summary-custom-url').value.trim();
+        settings[STORAGE_KEYS.SUMMARY_API_KEY] =
+          document.getElementById('summary-custom-key').value.trim();
+        settings[STORAGE_KEYS.SUMMARY_MODEL] =
+          document.getElementById('summary-custom-model').value.trim();
+        break;
+    }
+
+    await setProviderSettings(settings);
+    setStatus(providersStatus, 'Provider settings saved.', 'success');
+    showToast('Providers saved!');
+    setTimeout(() => setStatus(providersStatus, ''), 3000);
   } finally {
-    btnSaveModels.disabled = false;
+    btnSaveProviders.disabled = false;
   }
 });
 
 // ---------------------------------------------------------------------------
-// API key validation (free models-list call to verify the key is valid)
+// API key validation
 // ---------------------------------------------------------------------------
 
 async function validateApiKey(key) {
@@ -158,15 +278,30 @@ async function validateApiKey(key) {
 }
 
 // ---------------------------------------------------------------------------
+// Experimental: Meet captions toggle
+// ---------------------------------------------------------------------------
+
+useMeetCaptionsToggle.addEventListener('change', async () => {
+  await setUseMeetCaptions(useMeetCaptionsToggle.checked);
+  setStatus(
+    captionsStatus,
+    useMeetCaptionsToggle.checked
+      ? 'Meet captions enabled. Fallback to speech recognition is always active.'
+      : 'Meet captions disabled. Standard speech recognition will be used.',
+    useMeetCaptionsToggle.checked ? 'success' : '',
+  );
+  setTimeout(() => setStatus(captionsStatus, ''), 4000);
+});
+
+// ---------------------------------------------------------------------------
 // Initialise — load existing settings
 // ---------------------------------------------------------------------------
 
 async function init() {
-  const [existingKey, liveModel, finalModel, summaryModel] = await Promise.all([
+  const [existingKey, providerSettings, useCaptions] = await Promise.all([
     getApiKey(),
-    getLiveTranscriptModel(),
-    getFinalTranscriptModel(),
-    getPreferredModel(),
+    getProviderSettings(),
+    getUseMeetCaptions(),
   ]);
 
   if (existingKey) {
@@ -174,24 +309,73 @@ async function init() {
     setStatus(apiKeyStatus, 'A key is currently saved.', 'success');
   }
 
-  // Pre-select saved values; fall back gracefully if a saved value isn't in the list.
-  setSelectValue(liveModelSelect,    liveModel);
-  setSelectValue(finalModelSelect,   finalModel);
-  setSelectValue(summaryModelSelect, summaryModel);
+  // --- Restore cleanup provider ---
+  const cleanupProvider = providerSettings[STORAGE_KEYS.CLEANUP_PROVIDER] ?? 'openai';
+  cleanupProviderSelect.value = cleanupProvider;
+  showProviderFields(cleanupFieldSets, cleanupProvider);
+
+  // Populate cleanup model fields
+  const cleanupModel = providerSettings[STORAGE_KEYS.CLEANUP_MODEL] ?? '';
+  const cleanupUrl   = providerSettings[STORAGE_KEYS.CLEANUP_BASE_URL] ?? '';
+  const cleanupKey   = providerSettings[STORAGE_KEYS.CLEANUP_API_KEY] ?? '';
+
+  setSelectOrInput('cleanup-openai-model',   cleanupModel);
+  document.getElementById('cleanup-lmstudio-url').value   = cleanupUrl   || 'http://localhost:1234/v1';
+  document.getElementById('cleanup-lmstudio-model').value = cleanupModel;
+  document.getElementById('cleanup-ollama-url').value     = cleanupUrl   || 'http://localhost:11434/v1';
+  document.getElementById('cleanup-ollama-model').value   = cleanupModel;
+  document.getElementById('cleanup-custom-url').value     = cleanupUrl;
+  document.getElementById('cleanup-custom-key').value     = cleanupKey;
+  document.getElementById('cleanup-custom-model').value   = cleanupModel;
+
+  // --- Restore summary provider ---
+  const summaryProvider = providerSettings[STORAGE_KEYS.SUMMARY_PROVIDER] ?? 'openai';
+  summaryProviderSelect.value = summaryProvider;
+  showProviderFields(summaryFieldSets, summaryProvider);
+
+  // Populate summary model fields
+  const summaryModel = providerSettings[STORAGE_KEYS.SUMMARY_MODEL] ?? '';
+  const summaryUrl   = providerSettings[STORAGE_KEYS.SUMMARY_BASE_URL] ?? '';
+  const summaryKey   = providerSettings[STORAGE_KEYS.SUMMARY_API_KEY] ?? '';
+
+  setSelectOrInput('summary-openai-model',    summaryModel);
+  setSelectOrInput('summary-deepseek-model',  summaryModel);
+  document.getElementById('summary-deepseek-key').value    = summaryKey;
+  document.getElementById('summary-lmstudio-url').value    = summaryUrl   || 'http://localhost:1234/v1';
+  document.getElementById('summary-lmstudio-model').value  = summaryModel;
+  document.getElementById('summary-ollama-url').value      = summaryUrl   || 'http://localhost:11434/v1';
+  document.getElementById('summary-ollama-model').value    = summaryModel;
+  document.getElementById('summary-custom-url').value      = summaryUrl;
+  document.getElementById('summary-custom-key').value      = summaryKey;
+  document.getElementById('summary-custom-model').value    = summaryModel;
+
+  // --- Restore experimental ---
+  useMeetCaptionsToggle.checked = useCaptions;
+
+  updateApiKeyVisibility();
 }
 
-/** Sets a <select> value, adding a custom option if the saved value isn't in the list. */
-function setSelectValue(selectEl, value) {
+/**
+ * Sets a <select> value if the option exists, otherwise sets an <input> value.
+ * For selects, falls back gracefully when the saved value isn't in the list.
+ */
+function setSelectOrInput(elementId, value) {
   if (!value) return;
-  // Try to find a matching option
-  const exists = Array.from(selectEl.options).some((o) => o.value === value);
-  if (!exists) {
-    const opt = document.createElement('option');
-    opt.value = value;
-    opt.textContent = value;
-    selectEl.appendChild(opt);
+  const el = document.getElementById(elementId);
+  if (!el) return;
+
+  if (el.tagName === 'SELECT') {
+    const exists = Array.from(el.options).some((o) => o.value === value);
+    if (!exists) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = value;
+      el.appendChild(opt);
+    }
+    el.value = value;
+  } else {
+    el.value = value;
   }
-  selectEl.value = value;
 }
 
 init();

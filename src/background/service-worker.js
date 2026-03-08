@@ -35,15 +35,13 @@ import {
   setFinalTranscript,
   clearSessionData,
   getApiKey,
-  getPreferredModel,
-  getFinalTranscriptModel,
   appendToHistory,
 } from '../lib/storage.js';
 
 import {
-  cleanupTranscript,
-  summarizeMeeting,
-} from '../lib/openai.js';
+  getCleanupProvider,
+  getSummaryProvider,
+} from '../lib/providers/ProviderRegistry.js';
 
 // ---------------------------------------------------------------------------
 // Module state
@@ -71,14 +69,6 @@ async function handleStartRecording(senderTabId) {
 
   if (state === STATE.RECORDING || state === STATE.PROCESSING) {
     return { success: false, error: 'A recording is already in progress.' };
-  }
-
-  const apiKey = await getApiKey();
-  if (!apiKey) {
-    return {
-      success: false,
-      error: 'No OpenAI API key found. Please add your key in the extension settings.',
-    };
   }
 
   const tabId = senderTabId ?? (await getActiveMeetTabId());
@@ -142,16 +132,15 @@ async function handleStopRecording() {
 
 async function processTranscript(rawTranscript) {
   try {
-    const [apiKey, finalModel, summaryModel] = await Promise.all([
-      getApiKey(),
-      getFinalTranscriptModel(),
-      getPreferredModel(),
+    const [cleanupProvider, summaryProvider] = await Promise.all([
+      getCleanupProvider(),
+      getSummaryProvider(),
     ]);
 
-    const finalTranscript = await cleanupTranscript(rawTranscript, apiKey, finalModel);
+    const finalTranscript = await cleanupProvider.cleanup(rawTranscript);
     await setFinalTranscript(finalTranscript);
 
-    const notes = await summarizeMeeting(finalTranscript, apiKey, summaryModel);
+    const notes = await summaryProvider.summarize(finalTranscript);
 
     // Read liveTranscript *after* processing so it includes everything the
     // side panel sent via TRANSCRIPT_CHUNK during the session.

@@ -2,14 +2,16 @@
  * Side Panel Script — Open Meeting Scribe
  *
  * Persistent sidebar that:
- *   - Drives live transcription via SpeechRecognition (MeetingSessionController)
+ *   - Drives live transcription via TranscriptSourceManager (Meet captions or
+ *     SpeechRecognition, with automatic fallback)
  *   - Shows a rolling live transcript (final utterances + current interim text)
+ *   - Shows the active transcript source and status
  *   - Displays tabbed meeting notes after the session ends
  *   - Keeps a history list of all meetings in the current browser session
  *   - Supports multiselect delete of past meetings
  */
 
-import { MeetingSessionController } from '../lib/MeetingSessionController.js';
+import { TranscriptSourceManager } from '../lib/TranscriptSourceManager.js';
 
 // ---------------------------------------------------------------------------
 // DOM references
@@ -51,6 +53,8 @@ const histHeaderSelect   = document.getElementById('hist-header-select');
 // Live transcript elements
 const liveTranscriptEl      = document.getElementById('live-transcript');
 const transcribingIndicator = document.getElementById('transcribing-indicator');
+const sourceIndicator       = document.getElementById('source-indicator');
+const sourceLabelEl         = document.getElementById('source-label');
 
 // Done view tab elements
 const tabBtns        = document.querySelectorAll('.tab-btn');
@@ -84,41 +88,75 @@ let activeHistoryEntry = null;
 let selectionMode      = false;
 const selectedIds      = new Set();
 
-// Recognition lifecycle flag — prevents double-starting when multiple
-// RECORDING state updates arrive for the same session.
-let recognitionActive = false;
+/** Recording-tab ID from session state — used to filter caption messages. */
+let recordingTabId = null;
 
-// The floating interim <p> element at the bottom of the live transcript.
+/** Whether the transcription controller is currently active. */
+let transcriptionActive = false;
+
+/** The floating interim <p> element at the bottom of the live transcript. */
 let interimEl = null;
 
 // ---------------------------------------------------------------------------
-// SpeechRecognition controller
+// TranscriptSourceManager
 // ---------------------------------------------------------------------------
 
-const sessionController = new MeetingSessionController({
+const sourceManager = new TranscriptSourceManager({
   onUpdate: (finalText, interimText) => updateLiveTranscript(finalText, interimText),
   onChunk:  (text, fullTranscript)   => handleTranscriptChunk(text, fullTranscript),
-  onError:  (message, fatal)         => handleRecognitionError(message, fatal),
+  onError:  (message, fatal)         => handleTranscriptError(message, fatal),
+  onSourceChange: (source, message)  => updateSourceIndicator(source, message),
 });
 
 function handleTranscriptChunk(text, fullTranscript) {
-  // Persist the running transcript in session storage via the service worker.
-  // The side panel already updates its own UI directly via appendFinalUtterance.
+  appendFinalUtterance(text);
   chrome.runtime.sendMessage({
     type: 'TRANSCRIPT_CHUNK',
     payload: { text, fullTranscript },
   }).catch(() => {});
 }
 
-function handleRecognitionError(message, fatal) {
-  console.warn('[SpeechRecognition]', message);
+function handleTranscriptError(message, fatal) {
+  console.warn('[TranscriptSource]', message);
   if (fatal) {
-    recognitionActive = false;
+    transcriptionActive = false;
     chrome.runtime.sendMessage({
       type: 'RECOGNITION_ERROR',
       payload: { error: message },
     }).catch(() => {});
   }
+}
+
+// ---------------------------------------------------------------------------
+// Source indicator
+// ---------------------------------------------------------------------------
+
+const SOURCE_CONFIG = {
+  detecting:       { label: 'Detecting Meet captions…',             cls: 'source-detecting' },
+  captions:        { label: 'Meet Captions (Experimental)',          cls: 'source-captions'  },
+  speech:          { label: 'Speech Recognition',                    cls: 'source-speech'    },
+  speech_fallback: { label: 'Fallback: Speech Recognition',          cls: 'source-fallback'  },
+};
+
+function updateSourceIndicator(source, message) {
+  if (!sourceIndicator || !sourceLabelEl) return;
+
+  const cfg = SOURCE_CONFIG[source];
+  if (!cfg) return;
+
+  // Swap CSS class
+  sourceIndicator.className = `source-indicator ${cfg.cls}`;
+  sourceLabelEl.textContent = cfg.label;
+  sourceIndicator.classList.remove('hidden');
+
+  // Show a toast for fallback transitions so users notice the change.
+  if (source === 'speech_fallback' && message) {
+    showToast(message);
+  }
+}
+
+function hideSourceIndicator() {
+  sourceIndicator?.classList.add('hidden');
 }
 
 // ---------------------------------------------------------------------------
@@ -195,7 +233,7 @@ function appendFinalUtterance(text) {
 }
 
 /**
- * Called on every recognition event (final or interim).
+ * Called on every recognition/caption event (final or interim).
  * Manages the live interim <p> and the "Listening…" indicator.
  */
 function updateLiveTranscript(finalText, interimText) {
@@ -216,7 +254,6 @@ function updateLiveTranscript(finalText, interimText) {
     interimEl.textContent = interimText;
     if (isNearBottom()) liveTranscriptEl.scrollTop = liveTranscriptEl.scrollHeight;
   } else {
-    // Final result delivered — remove the interim element.
     if (interimEl?.isConnected) {
       interimEl.remove();
       interimEl = null;
@@ -242,13 +279,19 @@ function hydrateTranscript(fullTranscript) {
 // ---------------------------------------------------------------------------
 
 async function render(snapshot) {
-  const { state, notes, liveTranscript, finalTranscript } = snapshot;
-  const onMeet = await isOnMeetTab();
+  const {
+    state, notes, liveTranscript, finalTranscript,
+    recordingTabId: tabId,
+  } = snapshot;
 
+  if (tabId) recordingTabId = tabId;
+
+  const onMeet = await isOnMeetTab();
   refreshHistoryCount();
 
   if (!onMeet && state !== 'RECORDING' && state !== 'PROCESSING') {
     stopTimer();
+    hideSourceIndicator();
     showView('notOnMeet');
     return;
   }
@@ -256,26 +299,23 @@ async function render(snapshot) {
   switch (state) {
     case 'IDLE':
       stopTimer();
-      if (recognitionActive) {
-        recognitionActive = false;
-        sessionController.stop().catch(() => {});
+      hideSourceIndicator();
+      if (transcriptionActive) {
+        transcriptionActive = false;
+        sourceManager.stop().catch(() => {});
       }
       showView('idle');
       break;
 
     case 'RECORDING':
       startTimer();
-      if (!recognitionActive) {
-        recognitionActive = true;
-        if (!sessionController.isSupported) {
-          chrome.runtime.sendMessage({
-            type: 'RECOGNITION_ERROR',
-            payload: { error: 'Web Speech API is not supported in this browser.' },
-          }).catch(() => {});
-          recognitionActive = false;
-          break;
-        }
-        sessionController.start();
+      if (!transcriptionActive) {
+        transcriptionActive = true;
+        // start() reads settings and chooses the appropriate source.
+        sourceManager.start().catch((err) => {
+          console.error('[sourceManager.start]', err);
+          handleTranscriptError(err.message, true);
+        });
       }
       // Hydrate from session storage if the panel just (re)opened mid-session.
       if (liveTranscript && liveTranscriptEl.childElementCount === 0) {
@@ -287,10 +327,9 @@ async function render(snapshot) {
     case 'PROCESSING':
       stopTimer();
       showView('processing');
-      // Stop recognition and forward the final transcript to the service worker.
-      if (recognitionActive) {
-        recognitionActive = false;
-        sessionController.stop().then((transcript) => {
+      if (transcriptionActive) {
+        transcriptionActive = false;
+        sourceManager.stop().then((transcript) => {
           chrome.runtime.sendMessage({
             type: 'TRANSCRIPT_READY',
             payload: { transcript },
@@ -301,15 +340,17 @@ async function render(snapshot) {
 
     case 'DONE':
       stopTimer();
+      hideSourceIndicator();
       if (notes) renderDoneView(notes, liveTranscript, finalTranscript);
       showView('done');
       break;
 
     case 'ERROR': {
       stopTimer();
-      if (recognitionActive) {
-        recognitionActive = false;
-        sessionController.stop().catch(() => {});
+      hideSourceIndicator();
+      if (transcriptionActive) {
+        transcriptionActive = false;
+        sourceManager.stop().catch(() => {});
       }
       const errRaw = await chrome.storage.session.get('extension_error');
       errorMessage.textContent = errRaw.extension_error ?? 'An unexpected error occurred.';
@@ -319,6 +360,7 @@ async function render(snapshot) {
 
     default:
       stopTimer();
+      hideSourceIndicator();
       showView('idle');
   }
 }
@@ -547,7 +589,7 @@ function showToast(msg = 'Copied!') {
   toast.textContent = msg;
   toast.classList.remove('hidden');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.add('hidden'), 2000);
+  toastTimer = setTimeout(() => toast.classList.add('hidden'), 3500);
 }
 
 // ---------------------------------------------------------------------------
@@ -628,6 +670,7 @@ btnClear.addEventListener('click', async () => {
   liveTranscriptEl.innerHTML =
     '<p class="transcript-placeholder">Transcript will appear here as you speak…</p>';
   interimEl = null;
+  hideSourceIndicator();
 });
 
 btnRetry.addEventListener('click', async () => {
@@ -671,11 +714,28 @@ btnDetailCopy.addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Incoming messages from service worker
+// Incoming messages
 // ---------------------------------------------------------------------------
 
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener((message, sender) => {
   const { type, payload } = message;
+
+  // Caption messages come directly from the content script (sender.tab is set).
+  // Filter by recording tab ID so stray Meet tabs don't interfere.
+  if (type === 'CAPTION_UPDATE') {
+    if (sender?.tab?.id === recordingTabId) {
+      sourceManager.handleCaptionUpdate(payload);
+    }
+    return;
+  }
+
+  if (type === 'CAPTION_STATUS') {
+    if (sender?.tab?.id === recordingTabId) {
+      sourceManager.handleCaptionStatus(payload);
+    }
+    return;
+  }
+
   if (type === 'STATE_UPDATE') {
     render(payload);
   }

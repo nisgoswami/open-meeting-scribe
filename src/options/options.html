@@ -23,11 +23,196 @@
 
     <main class="page-content">
 
-      <!-- ── API Key ───────────────────────────────────────────── -->
+      <!-- ── Provider Settings ─────────────────────────────────── -->
       <section class="settings-section">
+        <h2 class="section-title">Provider Settings</h2>
+        <p class="section-desc">
+          Configure which AI service is used for each step of the pipeline.
+          Local providers (LM Studio, Ollama) require no API key and keep all data on your device.
+        </p>
+
+        <!-- 1. Transcript Cleanup -->
+        <div class="provider-group">
+          <div class="provider-group-header">
+            <span class="model-step-badge">1</span>
+            <div>
+              <p class="model-group-title">Transcript Cleanup <span class="model-group-when">after recording stops</span></p>
+              <p class="model-group-desc">Fixes punctuation, removes filler words, and adds paragraph breaks. Non-fatal — raw transcript is used if this step fails.</p>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="cleanup-provider" class="form-label">Provider</label>
+            <select id="cleanup-provider" class="form-select">
+              <option value="openai">OpenAI</option>
+              <option value="skip">Skip — use raw transcript</option>
+              <option value="lmstudio">LM Studio (local)</option>
+              <option value="ollama">Ollama (local)</option>
+              <option value="custom">Custom OpenAI-compatible endpoint</option>
+            </select>
+          </div>
+
+          <!-- OpenAI cleanup fields -->
+          <div class="provider-fields" id="cleanup-fields-openai">
+            <div class="form-group">
+              <label for="cleanup-openai-model" class="form-label">Model</label>
+              <select id="cleanup-openai-model" class="form-select">
+                <option value="gpt-4o-mini">gpt-4o-mini — fast, cost-efficient (recommended)</option>
+                <option value="gpt-4o">gpt-4o — highest quality cleanup</option>
+                <option value="gpt-3.5-turbo">gpt-3.5-turbo — legacy, lowest cost</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- LM Studio cleanup fields -->
+          <div class="provider-fields hidden" id="cleanup-fields-lmstudio">
+            <div class="form-group">
+              <label for="cleanup-lmstudio-url" class="form-label">Base URL</label>
+              <input type="text" id="cleanup-lmstudio-url" class="form-input" placeholder="http://localhost:1234/v1" />
+              <p class="field-hint">The URL of your LM Studio server, including <code>/v1</code>.</p>
+            </div>
+            <div class="form-group">
+              <label for="cleanup-lmstudio-model" class="form-label">Model</label>
+              <input type="text" id="cleanup-lmstudio-model" class="form-input" placeholder="e.g. mistral-7b-instruct" />
+            </div>
+          </div>
+
+          <!-- Ollama cleanup fields -->
+          <div class="provider-fields hidden" id="cleanup-fields-ollama">
+            <div class="form-group">
+              <label for="cleanup-ollama-url" class="form-label">Base URL</label>
+              <input type="text" id="cleanup-ollama-url" class="form-input" placeholder="http://localhost:11434/v1" />
+              <p class="field-hint">Ollama's OpenAI-compatible endpoint. Requires Ollama 0.1.24+.</p>
+            </div>
+            <div class="form-group">
+              <label for="cleanup-ollama-model" class="form-label">Model</label>
+              <input type="text" id="cleanup-ollama-model" class="form-input" placeholder="e.g. llama3" />
+            </div>
+          </div>
+
+          <!-- Custom cleanup fields -->
+          <div class="provider-fields hidden" id="cleanup-fields-custom">
+            <div class="form-group">
+              <label for="cleanup-custom-url" class="form-label">Base URL</label>
+              <input type="text" id="cleanup-custom-url" class="form-input" placeholder="https://your-endpoint.example.com/v1" />
+            </div>
+            <div class="form-group">
+              <label for="cleanup-custom-key" class="form-label">API Key <span class="form-label-optional">(optional)</span></label>
+              <input type="password" id="cleanup-custom-key" class="form-input" placeholder="sk-…" autocomplete="off" spellcheck="false" />
+            </div>
+            <div class="form-group">
+              <label for="cleanup-custom-model" class="form-label">Model</label>
+              <input type="text" id="cleanup-custom-model" class="form-input" placeholder="e.g. gpt-4o-mini" />
+            </div>
+          </div>
+        </div>
+
+        <div class="provider-divider"></div>
+
+        <!-- 2. Meeting Summary -->
+        <div class="provider-group provider-group--last">
+          <div class="provider-group-header">
+            <span class="model-step-badge">2</span>
+            <div>
+              <p class="model-group-title">Meeting Summary <span class="model-group-when">structured notes generation</span></p>
+              <p class="model-group-desc">Generates the summary, key decisions, action items, and open questions from the cleaned transcript. Strong reasoning is key.</p>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="summary-provider" class="form-label">Provider</label>
+            <select id="summary-provider" class="form-select">
+              <option value="openai">OpenAI</option>
+              <option value="deepseek">DeepSeek</option>
+              <option value="lmstudio">LM Studio (local)</option>
+              <option value="ollama">Ollama (local)</option>
+              <option value="custom">Custom OpenAI-compatible endpoint</option>
+            </select>
+          </div>
+
+          <!-- OpenAI summary fields -->
+          <div class="provider-fields" id="summary-fields-openai">
+            <div class="form-group">
+              <label for="summary-openai-model" class="form-label">Model</label>
+              <select id="summary-openai-model" class="form-select">
+                <option value="gpt-4o-mini">gpt-4o-mini — strong reasoning, cost-efficient (recommended)</option>
+                <option value="gpt-4o">gpt-4o — high quality structured output</option>
+                <option value="gpt-4-turbo">gpt-4-turbo — large context window</option>
+                <option value="gpt-3.5-turbo">gpt-3.5-turbo — legacy, lowest cost</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- DeepSeek summary fields -->
+          <div class="provider-fields hidden" id="summary-fields-deepseek">
+            <div class="form-group">
+              <label for="summary-deepseek-key" class="form-label">DeepSeek API Key</label>
+              <input type="password" id="summary-deepseek-key" class="form-input" placeholder="sk-…" autocomplete="off" spellcheck="false" />
+              <p class="field-hint">Get a key at <a href="https://platform.deepseek.com" target="_blank" rel="noopener noreferrer">platform.deepseek.com</a>.</p>
+            </div>
+            <div class="form-group">
+              <label for="summary-deepseek-model" class="form-label">Model</label>
+              <select id="summary-deepseek-model" class="form-select">
+                <option value="deepseek-chat">deepseek-chat — fast, very cost-efficient (recommended)</option>
+                <option value="deepseek-reasoner">deepseek-reasoner — strongest reasoning, slower</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- LM Studio summary fields -->
+          <div class="provider-fields hidden" id="summary-fields-lmstudio">
+            <div class="form-group">
+              <label for="summary-lmstudio-url" class="form-label">Base URL</label>
+              <input type="text" id="summary-lmstudio-url" class="form-input" placeholder="http://localhost:1234/v1" />
+              <p class="field-hint">The URL of your LM Studio server, including <code>/v1</code>.</p>
+            </div>
+            <div class="form-group">
+              <label for="summary-lmstudio-model" class="form-label">Model</label>
+              <input type="text" id="summary-lmstudio-model" class="form-input" placeholder="e.g. mistral-7b-instruct" />
+            </div>
+          </div>
+
+          <!-- Ollama summary fields -->
+          <div class="provider-fields hidden" id="summary-fields-ollama">
+            <div class="form-group">
+              <label for="summary-ollama-url" class="form-label">Base URL</label>
+              <input type="text" id="summary-ollama-url" class="form-input" placeholder="http://localhost:11434/v1" />
+              <p class="field-hint">Ollama's OpenAI-compatible endpoint. Requires Ollama 0.1.24+.</p>
+            </div>
+            <div class="form-group">
+              <label for="summary-ollama-model" class="form-label">Model</label>
+              <input type="text" id="summary-ollama-model" class="form-input" placeholder="e.g. llama3" />
+            </div>
+          </div>
+
+          <!-- Custom summary fields -->
+          <div class="provider-fields hidden" id="summary-fields-custom">
+            <div class="form-group">
+              <label for="summary-custom-url" class="form-label">Base URL</label>
+              <input type="text" id="summary-custom-url" class="form-input" placeholder="https://your-endpoint.example.com/v1" />
+            </div>
+            <div class="form-group">
+              <label for="summary-custom-key" class="form-label">API Key <span class="form-label-optional">(optional)</span></label>
+              <input type="password" id="summary-custom-key" class="form-input" placeholder="sk-…" autocomplete="off" spellcheck="false" />
+            </div>
+            <div class="form-group">
+              <label for="summary-custom-model" class="form-label">Model</label>
+              <input type="text" id="summary-custom-model" class="form-input" placeholder="e.g. gpt-4o-mini" />
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button id="btn-save-providers" class="btn btn-primary">Save Provider Settings</button>
+        </div>
+        <p id="providers-status" class="field-status" aria-live="polite"></p>
+      </section>
+
+      <!-- ── OpenAI API Key (shown only when OpenAI is selected) ── -->
+      <section class="settings-section" id="api-key-section">
         <h2 class="section-title">OpenAI API Key</h2>
         <p class="section-desc">
-          Your API key is stored locally in your browser and is never sent to any server other than OpenAI.
+          Your key is stored locally and never sent anywhere other than OpenAI.
           Get a key at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">platform.openai.com/api-keys</a>.
         </p>
 
@@ -58,78 +243,36 @@
         </div>
       </section>
 
-      <!-- ── AI Models ─────────────────────────────────────────── -->
-      <section class="settings-section">
-        <h2 class="section-title">Best Models for Open Meeting Scribe</h2>
+      <!-- ── Experimental ──────────────────────────────────────── -->
+      <section class="settings-section settings-section--experimental">
+        <h2 class="section-title">
+          <span class="experimental-badge">⚗ Experimental</span>
+          Transcript Sources
+        </h2>
         <p class="section-desc">
-          Each step of the pipeline uses a different OpenAI model optimised for that task.
-          Defaults are pre-selected based on the recommended configuration below.
+          These features are not guaranteed to be stable. They are safe to enable and can be
+          turned off at any time. If an experimental source fails, the extension automatically
+          falls back to the standard speech recognition path.
         </p>
 
-        <!-- 1. Live transcript -->
-        <div class="model-group">
-          <div class="model-group-header">
-            <span class="model-step-badge">1</span>
+        <div class="form-group">
+          <div class="toggle-row">
             <div>
-              <p class="model-group-title">Live Transcript <span class="model-group-when">during the meeting</span></p>
-              <p class="model-group-desc">Transcribes each 10-second audio segment in real time. Optimised for low latency and continuous streaming.</p>
+              <span class="form-label">Use Google Meet captions for live transcript</span>
+              <p class="field-hint">
+                Reads captions directly from Google Meet's on-screen caption UI when available.
+                Automatically falls back to speech recognition if captions are not detected or
+                stop unexpectedly. May break if Google Meet changes its interface.
+              </p>
             </div>
-          </div>
-          <div class="form-group">
-            <label for="live-model-select" class="form-label">Model</label>
-            <select id="live-model-select" class="form-select">
-              <option value="gpt-realtime-mini">gpt-realtime-mini — low latency, designed for live streaming (recommended)</option>
-              <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe — fast, balanced accuracy</option>
-              <option value="gpt-4o-transcribe">gpt-4o-transcribe — highest accuracy</option>
-              <option value="whisper-1">whisper-1 — legacy</option>
-            </select>
+            <label class="toggle-switch" aria-label="Toggle Meet captions">
+              <input type="checkbox" id="use-meet-captions" />
+              <span class="toggle-slider"></span>
+            </label>
           </div>
         </div>
 
-        <!-- 2. Final transcript -->
-        <div class="model-group">
-          <div class="model-group-header">
-            <span class="model-step-badge">2</span>
-            <div>
-              <p class="model-group-title">Final Transcript <span class="model-group-when">after meeting ends</span></p>
-              <p class="model-group-desc">Runs once after recording stops to clean up punctuation, remove filler words, and add paragraph breaks. Handles messy audio and multiple speakers.</p>
-            </div>
-          </div>
-          <div class="form-group">
-            <label for="final-model-select" class="form-label">Model</label>
-            <select id="final-model-select" class="form-select">
-              <option value="gpt-4o-transcribe">gpt-4o-transcribe — very accurate, multi-speaker support (recommended)</option>
-              <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe — faster, lower cost</option>
-              <option value="gpt-4o-mini">gpt-4o-mini — GPT-based cleanup pass</option>
-              <option value="gpt-4o">gpt-4o — highest quality cleanup</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- 3. Meeting summary -->
-        <div class="model-group model-group--last">
-          <div class="model-group-header">
-            <span class="model-step-badge">3</span>
-            <div>
-              <p class="model-group-title">Meeting Summary <span class="model-group-when">structured notes generation</span></p>
-              <p class="model-group-desc">Generates structured notes from the final transcript: summary, key decisions, action items, and open questions. Strong structured-output reasoning is key.</p>
-            </div>
-          </div>
-          <div class="form-group">
-            <label for="summary-model-select" class="form-label">Model</label>
-            <select id="summary-model-select" class="form-select">
-              <option value="gpt-5-mini">gpt-5-mini — strong reasoning, cost-efficient (recommended)</option>
-              <option value="gpt-4o-mini">gpt-4o-mini — fast, good quality</option>
-              <option value="gpt-4o">gpt-4o — high quality</option>
-              <option value="gpt-4-turbo">gpt-4-turbo</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="form-actions">
-          <button id="btn-save-models" class="btn btn-primary">Save Model Preferences</button>
-        </div>
-        <p id="models-status" class="field-status" aria-live="polite"></p>
+        <p id="captions-status" class="field-status" aria-live="polite"></p>
       </section>
 
       <!-- ── Privacy ────────────────────────────────────────────── -->
@@ -137,8 +280,8 @@
         <h2 class="section-title">Privacy</h2>
         <ul class="info-list">
           <li>Meeting audio is processed entirely in memory — never written to disk.</li>
-          <li>Transcripts are sent directly to OpenAI from your browser using your own API key.</li>
-          <li>Your API key is stored in your local browser profile (encrypted at rest by Chrome).</li>
+          <li>Transcripts are sent directly to your chosen provider from your browser using your own API key.</li>
+          <li>Your API keys are stored in your local browser profile (encrypted at rest by Chrome).</li>
           <li>No analytics, telemetry, or backend servers are used by this extension.</li>
           <li>Session data is cleared as soon as you dismiss the meeting notes.</li>
         </ul>
